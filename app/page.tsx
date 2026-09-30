@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-
+import Link from "next/link";
 const TIER: Record<string, string> = {
   hot: "bg-red-500/15 text-red-400 border-red-500/40",
   warm: "bg-amber-500/15 text-amber-400 border-amber-500/40",
@@ -113,7 +113,9 @@ export default function Home() {
                 <div className="flex items-center gap-3">
                   <div className="text-2xl font-bold w-12">{l.score}</div>
                   <div className="flex-1">
-                    <div className="font-semibold">{l.name}</div>
+                    <Link href={`/leads/${l.id}`} className="font-semibold hover:text-violet-300">
+  {l.name} →
+</Link>
                     <div className="text-xs text-slate-400">
                       {l.location} · {l.budget} · {l.timeline}
                     </div>
