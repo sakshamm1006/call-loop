@@ -37,7 +37,11 @@ export async function POST(req: Request) {
       .single();
     if (error) throw new Error(error.message);
     return NextResponse.json(data);
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "AI analysis failed" }, { status: 502 });
+    } catch (e: any) {
+    console.error("AI error:", e);
+    return NextResponse.json(
+      { error: "The AI service is busy right now. Please try again in a moment." },
+      { status: 502 }
+    );
   }
-}
+} 

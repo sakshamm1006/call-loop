@@ -39,6 +39,10 @@ ${JSON.stringify({ ...lead.analysis, brief: undefined })}`;
     await db.from("chat_messages").insert({ lead_id: id, role: "assistant", content: reply });
     return NextResponse.json({ reply });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "AI failed" }, { status: 502 });
+    console.error("AI error:", e);
+    return NextResponse.json(
+      { error: "The AI service is busy right now. Please try again in a moment." },
+      { status: 502 }
+    );
   }
-}
+} 
