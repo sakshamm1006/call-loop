@@ -33,11 +33,15 @@ export default function LeadPage() {
   const { id } = useParams<{ id: string }>();
   const [lead, setLead] = useState<any>(null);
   const [msgs, setMsgs] = useState<{ role: string; content: string }[]>([]);
+  const [calls, setCalls] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [brief, setBrief] = useState<any>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefErr, setBriefErr] = useState("");
+  const [notes, setNotes] = useState("");
+  const [debriefLoading, setDebriefLoading] = useState(false);
+  const [debriefErr, setDebriefErr] = useState("");
   const [copied, setCopied] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -48,6 +52,7 @@ export default function LeadPage() {
         const d = await r.json();
         setLead(d.lead);
         setMsgs(d.messages);
+        setCalls(d.calls ?? []);
         setBrief(d.lead.analysis?.brief ?? null);
       }
     })();
@@ -62,17 +67,24 @@ export default function LeadPage() {
     setMsgs((m) => [...m, { role: "user", content: text }]);
     setInput("");
     setSending(true);
+    let reply = "";
     try {
       const r = await fetch(`/api/leads/${id}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
       });
-      const d = await r.json();
-      setMsgs((m) => [...m, { role: "assistant", content: d.reply || d.error || "Something went wrong" }]);
+      const raw = await r.text();
+      try {
+        const d = JSON.parse(raw);
+        reply = d.reply || d.error || "Something went wrong";
+      } catch {
+        reply = `Server error (HTTP ${r.status}). Please try again.`;
+      }
     } catch {
-      setMsgs((m) => [...m, { role: "assistant", content: "Network error, try again." }]);
+      reply = "Could not reach the server. Check your connection.";
     }
+    setMsgs((m) => [...m, { role: "assistant", content: reply }]);
     setSending(false);
   };
 
@@ -81,18 +93,51 @@ export default function LeadPage() {
     setBriefErr("");
     try {
       const r = await fetch(`/api/leads/${id}/brief`, { method: "POST" });
-      const d = await r.json();
-      if (!r.ok) setBriefErr(d.error || "Failed");
-      else setBrief(d);
+      const raw = await r.text();
+      try {
+        const d = JSON.parse(raw);
+        if (!r.ok) setBriefErr(d.error || "Failed");
+        else setBrief(d);
+      } catch {
+        setBriefErr(`Server error (HTTP ${r.status}). Please try again.`);
+      }
     } catch {
-      setBriefErr("Network error");
+      setBriefErr("Could not reach the server. Check your connection.");
     }
     setBriefLoading(false);
   };
 
+  const submitDebrief = async () => {
+    if (notes.trim().length < 5 || debriefLoading) return;
+    setDebriefLoading(true);
+    setDebriefErr("");
+    try {
+      const r = await fetch(`/api/leads/${id}/debrief`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      const raw = await r.text();
+      try {
+        const d = JSON.parse(raw);
+        if (!r.ok) setDebriefErr(d.error || "Failed");
+        else {
+          setLead((l: any) => ({ ...l, score: d.score, tier: d.tier, analysis: d.analysis }));
+          setCalls((c) => [...c, d.call]);
+          setNotes("");
+        }
+      } catch {
+        setDebriefErr(`Server error (HTTP ${r.status}). Please try again.`);
+      }
+    } catch {
+      setDebriefErr("Could not reach the server. Check your connection.");
+    }
+    setDebriefLoading(false);
+  };
+
   if (!lead)
     return <main className="min-h-screen bg-slate-950 text-slate-400 p-6">Loading...</main>;
-  const a = lead.analysis;
+  const a = lead.analysis ?? {};
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
@@ -101,14 +146,21 @@ export default function LeadPage() {
       </Link>
 
       <div className="flex items-center gap-4 mt-3 mb-6">
-        <div className="text-5xl font-bold">{lead.score}</div>
+        <motion.div
+          key={lead.score}
+          initial={{ scale: 1.4, opacity: 0.4 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="text-5xl font-bold"
+        >
+          {lead.score}
+        </motion.div>
         <div className="flex-1">
           <h1 className="text-2xl font-bold">{lead.name}</h1>
           <div className="text-sm text-slate-400">
             {lead.location} · {lead.requirement} · {lead.budget} · {lead.timeline}
           </div>
         </div>
-        {a?.urgent && (
+        {a.urgent && (
           <span className="text-xs px-2 py-1 rounded-full bg-red-600/20 text-red-300 animate-pulse">URGENT</span>
         )}
         <span className={`text-xs px-3 py-1 rounded-full border uppercase ${TIER[lead.tier]}`}>{lead.tier}</span>
@@ -137,11 +189,15 @@ export default function LeadPage() {
             </Card>
             <Card title="Objections / concerns">
               <div className="flex flex-wrap gap-2">
-                {a.objections?.map((r: string, i: number) => (
-                  <span key={i} className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-300">
-                    {r}
-                  </span>
-                ))}
+                {a.objections?.length ? (
+                  a.objections.map((r: string, i: number) => (
+                    <span key={i} className="text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-300">
+                      {r}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-xs text-slate-500">None open</span>
+                )}
               </div>
             </Card>
           </div>
@@ -223,6 +279,78 @@ export default function LeadPage() {
                 >
                   {briefLoading ? "Regenerating..." : "Regenerate"}
                 </button>
+                {briefErr && <p className="text-red-400 text-sm">{briefErr}</p>}
+              </div>
+            )}
+          </Card>
+
+          <Card title="📝 Post-call debrief" accent="border-emerald-500/40 bg-emerald-500/5">
+            <p className="text-sm text-slate-400 mb-3">
+              Just had the call? Add quick notes. The AI re-scores the lead and shows what changed and why.
+            </p>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              placeholder="e.g. Confirmed home loan is pre-approved up to 75L. Will visit Saturday with his wife. Still worried about builder delivery record."
+              className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+            />
+            <button
+              onClick={submitDebrief}
+              disabled={debriefLoading || notes.trim().length < 5}
+              className="mt-3 px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-medium disabled:opacity-50"
+            >
+              {debriefLoading ? "Updating lead..." : "Update lead from call"}
+            </button>
+            {debriefErr && <p className="text-red-400 text-sm mt-2">{debriefErr}</p>}
+
+            {calls.length > 0 && (
+              <div className="mt-5 space-y-3">
+                <div className="text-xs uppercase tracking-wider text-slate-400">Call history</div>
+                {[...calls].reverse().map((c) => {
+                  const diff = (c.score_after ?? 0) - (c.score_before ?? 0);
+                  return (
+                    <motion.div
+                      key={c.id}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl bg-slate-900 border border-slate-800 p-3 text-sm"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs text-slate-500">{new Date(c.created_at).toLocaleString()}</div>
+                        <div className="font-semibold">
+                          {c.score_before} → {c.score_after}{" "}
+                          <span
+                            className={
+                              diff > 0 ? "text-emerald-400" : diff < 0 ? "text-red-400" : "text-slate-400"
+                            }
+                          >
+                            ({diff > 0 ? "+" : ""}
+                            {diff})
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-slate-400 italic mb-2">“{c.notes}”</p>
+                      <ul className="list-disc pl-5 space-y-1 text-slate-200">
+                        {c.changes?.what_changed?.map((w: string, i: number) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                      {c.changes?.resolved_objections?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {c.changes.resolved_objections.map((o: string, i: number) => (
+                            <span
+                              key={i}
+                              className="text-xs px-2 py-1 rounded-full bg-emerald-500/15 text-emerald-300"
+                            >
+                              ✓ {o}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
               </div>
             )}
           </Card>
