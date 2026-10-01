@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import Link from "next/link";
+import { motion } from "framer-motion";
+
 const TIER: Record<string, string> = {
   hot: "bg-red-500/15 text-red-400 border-red-500/40",
   warm: "bg-amber-500/15 text-amber-400 border-amber-500/40",
@@ -20,6 +21,7 @@ export default function Home() {
   const [leads, setLeads] = useState<any[]>([]);
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [err, setErr] = useState("");
   const [filter, setFilter] = useState("all");
 
@@ -48,16 +50,53 @@ export default function Home() {
     setLoading(false);
   };
 
+  const seed = async () => {
+    setSeeding(true);
+    setErr("");
+    const r = await fetch("/api/seed", { method: "POST" });
+    if (!r.ok) setErr((await r.json()).error || "Could not load demo leads");
+    await load();
+    setSeeding(false);
+  };
+
   const shown = leads.filter((l) => filter === "all" || l.tier === filter);
+  const hot = leads.filter((l) => l.tier === "hot").length;
+  const urgent = leads.filter((l) => l.analysis?.urgent).length;
+  const avg = leads.length ? Math.round(leads.reduce((s, l) => s + (l.score || 0), 0) / leads.length) : 0;
+
   const input =
     "w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm outline-none focus:border-violet-500";
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-400 to-pink-400 bg-clip-text text-transparent">
-        CallLoop
-      </h1>
-      <p className="text-slate-400 mb-6">Know who to call first, and exactly what to say.</p>
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-400 to-pink-400 bg-clip-text text-transparent">
+            CallLoop
+          </h1>
+          <p className="text-slate-400">Know who to call first, and exactly what to say.</p>
+        </div>
+        <button
+          onClick={seed}
+          disabled={seeding}
+          className="text-sm px-4 py-2 rounded-lg border border-violet-500/50 text-violet-300 hover:bg-violet-500/10 disabled:opacity-50"
+        >
+          {seeding ? "Loading..." : "✨ Load demo leads"}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3 mb-6 max-w-xl">
+        {[
+          ["Hot leads", hot, "text-red-400"],
+          ["Urgent", urgent, "text-amber-400"],
+          ["Avg score", avg, "text-violet-300"],
+        ].map(([label, val, color]) => (
+          <div key={label as string} className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+            <div className={`text-2xl font-bold ${color}`}>{val}</div>
+            <div className="text-xs text-slate-400">{label}</div>
+          </div>
+        ))}
+      </div>
 
       <div className="grid lg:grid-cols-[380px_1fr] gap-6">
         <form onSubmit={submit} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 h-fit">
@@ -114,8 +153,8 @@ export default function Home() {
                   <div className="text-2xl font-bold w-12">{l.score}</div>
                   <div className="flex-1">
                     <Link href={`/leads/${l.id}`} className="font-semibold hover:text-violet-300">
-  {l.name} →
-</Link>
+                      {l.name} →
+                    </Link>
                     <div className="text-xs text-slate-400">
                       {l.location} · {l.budget} · {l.timeline}
                     </div>
@@ -133,7 +172,11 @@ export default function Home() {
                 <p className="text-sm mt-2 text-violet-300">→ {l.analysis?.next_action}</p>
               </motion.div>
             ))}
-            {!shown.length && <p className="text-slate-500">No leads yet. Add one on the left.</p>}
+            {!shown.length && (
+              <p className="text-slate-500">
+                No leads yet. Add one on the left, or click "Load demo leads" at the top.
+              </p>
+            )}
           </div>
         </section>
       </div>
